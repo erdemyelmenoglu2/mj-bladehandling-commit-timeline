@@ -1,0 +1,59 @@
+name: Monitor commit timeline
+
+on:
+  schedule:
+    # Every 2 hours, on the hour (UTC). GitHub may delay scheduled runs
+    # under load, so treat "every 2h" as approximate.
+    - cron: "0 */2 * * *"
+  workflow_dispatch:        # lets you run it manually from the Actions tab
+
+# Don't let two runs overlap.
+concurrency:
+  group: monitor-timeline
+  cancel-in-progress: false
+
+permissions:
+  contents: write           # needed to commit data/commits.json back to the repo
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch commits, update data, send email
+        env:
+          # --- source repo (set these as repo Variables) ---
+          SOURCE_OWNER:  ${{ vars.SOURCE_OWNER }}
+          SOURCE_REPO:   ${{ vars.SOURCE_REPO }}
+          SOURCE_BRANCH: ${{ vars.SOURCE_BRANCH }}      # optional; blank = default branch
+          # Token: only needed if the source repo is PRIVATE (a PAT) —
+          # a public repo works without it. GITHUB_TOKEN is fine for public
+          # and raises the rate limit.
+          GH_TOKEN:      ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
+          # --- email (set as repo Secrets) ---
+          SMTP_HOST:     ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:     ${{ secrets.SMTP_PORT }}
+          SMTP_USER:     ${{ secrets.SMTP_USER }}
+          SMTP_PASS:     ${{ secrets.SMTP_PASS }}
+          MAIL_FROM:     ${{ secrets.MAIL_FROM }}
+          MAIL_TO:       ${{ secrets.MAIL_TO }}
+        run: python scripts/fetch_commits.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain data/commits.json)" ]; then
+            git add data/commits.json
+            git commit -m "chore: update commit timeline data"
+            git push
+          else
+            echo "No data changes to commit."
+          fi
