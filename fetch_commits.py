@@ -38,7 +38,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "commits.json"
+DATA_PATH = Path(__file__).resolve().parent.parent / "commits.json"
 API = "https://api.github.com"
 
 
