@@ -5,15 +5,14 @@ on:
     # Every 2 hours, on the hour (UTC). GitHub may delay scheduled runs
     # under load, so treat "every 2h" as approximate.
     - cron: "0 */2 * * *"
-  workflow_dispatch:        # lets you run it manually from the Actions tab
+  workflow_dispatch:
 
-# Don't let two runs overlap.
 concurrency:
   group: monitor-timeline
   cancel-in-progress: false
 
 permissions:
-  contents: write           # needed to commit data/commits.json back to the repo
+  contents: write
 
 jobs:
   update:
@@ -35,40 +34,53 @@ jobs:
         run: |
           echo "Owner: $SOURCE_OWNER"
           echo "Repo: $SOURCE_REPO"
-          echo "Token present: $([ -n "$GH_TOKEN" ] && echo YES || echo NO)"
-          
-          curl -sS \
+
+          if [ -n "$GH_TOKEN" ]; then
+            echo "Token present: YES"
+          else
+            echo "Token present: NO"
+            echo "ERROR: SOURCE_REPO_TOKEN secret is empty or unavailable."
+            exit 1
+          fi
+
+          HTTP_STATUS=$(curl -sS \
             -o /tmp/github-response.json \
-            -w "HTTP status: %{http_code}\n" \
+            -w "%{http_code}" \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$SOURCE_OWNER/$SOURCE_REPO"
-          
+            "https://api.github.com/repos/$SOURCE_OWNER/$SOURCE_REPO")
+
+          echo "HTTP status: $HTTP_STATUS"
+          echo "GitHub response:"
           python -m json.tool /tmp/github-response.json
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "ERROR: GitHub API access test failed."
+            exit 1
+          fi
+
+          echo "SUCCESS: token can access the source repository."
 
       - name: Fetch commits, update data, send email
         env:
-          # --- source repo (set these as repo Variables) ---
-          SOURCE_OWNER:  ${{ vars.SOURCE_OWNER }}
-          SOURCE_REPO:   ${{ vars.SOURCE_REPO }}
+          SOURCE_OWNER: ${{ vars.SOURCE_OWNER }}
+          SOURCE_REPO: ${{ vars.SOURCE_REPO }}
           SOURCE_BRANCH: ${{ vars.SOURCE_BRANCH }}
-          GH_TOKEN:      ${{ secrets.SOURCE_REPO_TOKEN }}
-
-          # --- email (set as repo Secrets) ---
-          SMTP_HOST:     ${{ secrets.SMTP_HOST }}
-          SMTP_PORT:     ${{ secrets.SMTP_PORT }}
-          SMTP_USER:     ${{ secrets.SMTP_USER }}
-          SMTP_PASS:     ${{ secrets.SMTP_PASS }}
-          MAIL_FROM:     ${{ secrets.MAIL_FROM }}
-          MAIL_TO:       ${{ secrets.MAIL_TO }}
+          GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
         run: python fetch_commits.py
 
       - name: Commit updated data
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -n "$(git status --porcelain commits.json)" ]; then
+          if [ -n "$(git status --porcelain data/commits.json)" ]; then
             git add data/commits.json
             git commit -m "chore: update commit timeline data"
             git push
