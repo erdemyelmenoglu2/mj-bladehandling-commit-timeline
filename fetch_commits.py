@@ -58,18 +58,6 @@ def gh_get(url, token):
     req = Request(url, headers=headers)
     with urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
-- name: Test source repo access
-  env:
-    GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
-    SOURCE_OWNER: ${{ vars.SOURCE_OWNER }}
-    SOURCE_REPO: ${{ vars.SOURCE_REPO }}
-        run: |
-          curl -sS \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$SOURCE_OWNER/$SOURCE_REPO" \
-            | python -m json.tool
 
 def fetch_commits(owner, repo, branch, token, per_page=100):
     path = f"{API}/repos/{quote(owner)}/{quote(repo)}/commits?per_page={per_page}"
